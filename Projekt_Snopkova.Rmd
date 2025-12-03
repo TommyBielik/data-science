@@ -1,0 +1,327 @@
+---
+title: "Životná úroveň v Nemecku"
+author: "Sofia Snopková"
+date: "2025-11-17"
+output: 
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    numbers_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide 
+
+---
+Prvým krokom je inštalovanie potrebých balíčkov. V našom prípade to sú balíčky:
+- WDI: dáta zo svetovej banky
+- dplyr: pre prácu s dátami
+- tydir: na čistenie a úpravu dát
+- ggplot2: na tvorbu grafov
+- zoo: pre časové rady
+- broom: na prepis modelov do tabuliek 
+- yardstick: metriky pre hodnotenie modelov
+  
+
+```{r setup, include=FALSE}
+
+potrebne <- c("WDI" , "dplyr" , "tidyr" , "ggplot2" , "zoo" , "broom" , "yardstick" , "corrplot", "car")
+nove <- potrebne[!(potrebne %in% installed.packages()[,"Package"])] #skontroluje balíčky, ktoré už máme nainštalované, potom vyberie tie, ktoré chýbajú a uloží ich do premennej "nove"
+if(length(nove))install.packages(nove) # Ak nie je premenná "nove" prázdna, tak nainštaluje všetky chýbajúce balíčky, teda tie, ktoré sa v nej nachádzajú. Ak sú všetky balíčky už nainštalované, tak neurobí nič
+
+library(WDI)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(zoo)
+library(broom)
+library(yardstick)
+library(scales)
+library(corrplot)
+library(rsample)
+library(car)
+
+knitr::opts_chunk$set(echo = TRUE , warning = FALSE , message = FALSE) #uvidíme samotný kód a aj jeho výstup
+
+```
+
+
+
+#ÚVOD
+
+V práci sme analyzovali faktory, ktoré ovplyvňujú ekonomickú situáciu obyvateľov Nemecka prostredníctvom ich spotreby. Tá predstavuje kľúčovú zložku agregátneho dopytu a taktiež odzrkadľuje reálnu životnú úroveň obyvateľstva. Z tohoto dôvodu som túto premennú zvolila ako závislú premennú.
+
+Vysvetľujúce premenné som zvolila na základe ekonomickej teórie, ktorá hovorí o tom, že spotreba domácností závisí najmä od ich príjmov a finančnej istoty. Preto je dôležité sledovať premenné ako HDP na obyvateľa a mieru nezamestnanosti. Taktiež podľa ekonomickej teórie platí, že ak sa ceny tovarov a sužieb menia, tak sa mení aj správanie spotrebiteľov čo zachytáva index spotrebiteľských cien (CPI). Spotreba je ovplyvňovaná aj ekonomickou situáciou krajiny, ktorá je merateľná aj schopnosťou exportu ako aj importu danej krajiny, čo odráža obchodná bilancia.
+
+
+# 1.Sťahovanie dát 
+
+Na stiahnutie dát sme použili balík WDI, ktorý umožňuje sťahovať oficiálne štatistiky pre rôzne krajiny a roky.
+
+```{r sťahovanie dát}
+indikatory <- c(HDP_na_obyvatela = "NY.GDP.PCAP.CD", 
+                Miera_zamestnanosti = "SL.EMP.TOTL" , 
+                Miera_nezamestnanosti = "SL.UEM.TOTL.ZS" ,
+                CPI = "FP.CPI.TOTL" , 
+                Obchodna_bilancia = "NE.RSB.GNFS.ZS" , 
+                Spotreba_domacnosti = "NE.CON.PRVT.PP.CD",                 Rast_spotreby = "NE.CON.PRVT.PC.KD.ZG")
+pociatocne_data <- WDI(country = "DE" , indicator = indikatory , start = 2000 , end = 2024)
+print(pociatocne_data)
+
+names(pociatocne_data)
+
+```
+Vytvorilli sme zoznam premenných, ktoré do modelu chceme zahrnúť. Nachádzajú sa tu však aj premenné, ktoré pre našu analýzu nie sú potrebné, ako isoc2, isoc3, čo sú medzinárodné kódy krajiny, alebo country, čo je názov krajiny. Takéto zbytočné dáta z modelu môžme teda vymazať.
+
+```{r}
+data <- pociatocne_data %>%
+  select(-country, -iso2c, -iso3c)
+names(data)
+
+```
+
+
+# 2. Chýbajúce hodnoty
+Ďalším dôležitým krokom je nájdenie nájdenie chýbajúcich hodnôt v premenných.
+
+```{r}
+summary(data)
+colSums(is.na(data))
+```
+V základných štatistikách vidíme, že pri premenných "Spotreba_domacnosti" a " "Rast_spotreby" sa v každej nachádza 1 chýbajúca hodnota. Ostatné premenné neobsahujú žiadne NA, čiže nemajú žiadne chýbajúce hodnoty.
+
+
+
+### 2.1 Úprava dát
+
+Dataset sme upravili tak ,aby bol kompletný bez chýbajúcich hodnôt,a aby vo výsledku odhady modelu neboli skreslené
+
+```{r úprava dát}
+
+cols_to_interp <- c("HDP_na_obyvatela",
+                    "Miera_nezamestnanosti", 
+                    "CPI", 
+                    "Obchodna_bilancia", 
+                    "Spotreba_domacnosti", 
+                    "Rast_spotreby")
+
+hotove_data <- data %>%
+  arrange(year) %>%
+  mutate(across(all_of(cols_to_interp), ~ na.approx(., x = year, na.rm = FALSE))) %>%
+  drop_na()
+
+# Kontrola výsledku
+summary(hotove_data)
+
+```
+Dataset po interpolácii a vymazaní neúplných rokov zostal úplný, čiže dáta pre celé obdobie zostanú kompletné.
+
+# 3. Grafy
+
+Na znázornenie rôznych štatistík, závislostí a vývoja spotreby v Nemecku sme si zobrazili niekoľko grafov.
+
+### 3.1 Vývoj spotreby domácností 
+
+```{r Vývoj spotreby domácností}
+# Vývoj spotreby domácností
+ggplot(hotove_data, aes(x = year, y = Spotreba_domacnosti)) +
+  geom_line(color = "purple") +
+  labs(title = "Vývoj spotreby domácností v Nemecku",
+       y = "Spotreba domácností (PPP)")
+
+
+```
+Graf opisuje vývoj spotreby domácností v Nemecku od roku 2000 do roku 2024. Ako môžme vidieť, spotreba domácností v Nemecku sa v tomto časovom období takmer zdvojnásobila, pričom za celé obdobie klesla iba raz, a to v roku 2020.
+
+### 3.2 Miera nezamestnanosti
+```{r Miera nezamestnanosti}
+library(ggplot2)
+ggplot(hotove_data , aes(x = year , y = Miera_nezamestnanosti)) + geom_line(color = "#FFCCE5") + geom_point(color = "#99004c") + labs(title = "Miera nezamestnanosti (2000 - 2022)" , x = "rok" , y = "%")
+```
+Graf vyjadruje mieru nezamestnanosti v Nemecku vyjadrenú v percentách v rokoch 2000 - 2023. Na grafe vidíme, že od roku 2002 do roku 2005 nezamestnanosť vystúpala na viac ako 10%, pričom od roku 2005 do roku 2022 klesla pod 2%.
+
+### 3.3 Spotreba vs. nezamestnanosť
+```{r}
+# Spotreba vs. nezamestnanosť
+ggplot(hotove_data, aes(x = Miera_nezamestnanosti, y = Spotreba_domacnosti)) +  geom_point(color = "darkred") + geom_smooth(method = "lm") +
+  labs(title = "Vzťah medzi nezamestnanosťou a spotrebou domácností")
+```
+Graf ukazuje jasný negatívny vzťah medzi mierou nezamestnanosti a spotrebou domácností.
+
+Spotreba domácností má klesajúci trend pri raste miery nezamestnanosti. Vyššia nezamestnanosť je spojená s nižšou spotrebou, čo naznačuje, že zhoršené podmienky na trhu práce vedú domácnosti k obmedzeniu výdavkov.
+
+
+### 3.4 Spotreba vs. HDP na obyvateľa
+```{r}
+# Spotreba vs. HDP na obyvateľa
+ggplot(hotove_data, aes(x = HDP_na_obyvatela, y = Spotreba_domacnosti)) +
+  geom_point(color = "darkgreen") +
+  geom_smooth(method = "lm") +
+  labs(title = "Vzťah medzi HDP a spotrebou domácností")
+
+```
+Graf ukazuje, že medzi HDP na obyvateľa a spotrebou domácností existuje silná pozitívna lineárna súvislosť. S rastúcim HDP spotreba výrazne rastie, čo potvrdzuje stúpajúca regresná priamka. Hodnoty spotreby sa zvyšujú približne z 1,2 bilióna USD pri najnižších úrovniach HDP až na viac ako 2,5 bilióna USD pri najvyšších.
+
+### 3.5 Spotreba vs. obchodná bilancia
+```{r}
+ggplot(hotove_data, aes(x = Obchodna_bilancia, y = Spotreba_domacnosti)) +
+  geom_point() + geom_smooth(method = "lm") +
+  labs(title = "Vzťah medzi obchodnou bilanciou a spotrebou domácností")
+```
+Graf zobrazuje vzťah medzi obchodnou bilanciou Nemecka a spotrebou domácností. Regresná priamka má mierne rastie, čo znamená, že zlepšovanie obchodnej bilancie (vyšší prebytok) je spojený s mierne vyššou spotrebou domácností, ale tento vzťah je slabý.
+
+Čo sa týka bodového rozloženia, je pomerne rozptýlené, čo naznačuje, že obchodná bilancia sama o sebe nie je silným prediktorom spotreby domácností. Aj keď pri obchodnej bilancii okolo 0–2 % HDP vidíme spotrebu približne 1,2–1,7 bilióna USD, pri hodnotách okolo 5–7 % HDP sa spotreba pohybuje široko medzi 1,5–2,6 bilióna USD. Vidíme, že aj interval spoľahlivosti (šedá zóna) je široký, čo potvrdzuje vyššiu neistotu tohto vzťahu.
+
+
+# 4 Korelácia medzi premennými 
+
+Na zistenie vzájomných vzťahov medzi premennými sme vybrali hlavné ekonomické premenné, ktorými sú HDP na obyvateľa, miera nezamestnanosti, CPI, obchodnú bilanciu, spotrebu domácnosti a rast potreby. Spočítali sme Pearsonovu koreláciu, ktorá ukazuje, ako a v akom smere dve premenné vzájomne korelujú.
+
+
+```{r Korelacia}
+kor_data <- hotove_data %>%
+  select(HDP_na_obyvatela, Miera_nezamestnanosti,CPI, Obchodna_bilancia, Spotreba_domacnosti, Rast_spotreby)
+round(cor(kor_data),2)
+```
+Interpretácia premenných:
+- HDP na obyvateľa a spotreba domácnosti má hodnotu 0,82, čo vyjadruje vysokú pozitívnu koreláciu, čiže vyšší príjem sa spája s vyššou spotrebou.
+- Miera nezamestnanosti a spotreba domácností má hodnotu  -0,89, čo vyjadruje silnú negatívnu koreláciu, čiže vyššia nezamestnanosť znamená nižšiu spotrebu
+- CPI a spotreba domácností má hodnotu 0,99, čo vyjadruje veľmi silnú pozitívnu koreláciu, čiže s rastom cien rastie aj nominálna spotreba
+- Obchodná bilancia a spotreba má hodnotu 0,24, čo vyjadruje slabú pozitívnu koreláciu, čiže obchodná bilancia má menší vplyv na spotrebu
+- Rast spotreby a ostatné premenné majú takmer nulovú koreláciu s väčšinou, takže ich vplyv nie je signifikantný
+
+### Korelačná matica
+Pre jednoduchšie zobrazenie sme vytvorili korelogram.
+```{r Korelacna matica}
+kor_data <- hotove_data %>%
+  select(HDP_na_obyvatela, Miera_nezamestnanosti, CPI, Obchodna_bilancia, Spotreba_domacnosti, Rast_spotreby)
+
+cor_matrix <- cor(kor_data)
+
+# Zobrazenie korelačnej matice
+corrplot(cor_matrix, method = "color", addCoef.col = "black", number.cex = 0.8,
+         tl.cex = 0.9, tl.srt = 45, col = colorRampPalette(c("red","white","green"))(200))
+
+```
+```{r}
+# Váš existujúci model
+model <- lm(Spotreba_domacnosti ~ HDP_na_obyvatela + Miera_nezamestnanosti + CPI + Obchodna_bilancia, data = train)
+
+# VIF test
+vif_vysledky <- vif(model)
+print(vif_vysledky)
+```
+
+
+# Rozdelenie dát na Train / Test split
+Ďalej sme rozdelili dataset na trénovaciu a testovaciu množinu.Rozdeľuje celý dátový súbor na dve časti pre účely modelovania. Pomocou funkcie initial_split sme náhodne, ale reprodukovateľne (vďaka nastavenému seedu), vybrali 70 % dát ako trénovacích. Zvyšných 30 % dát tvorí testovaciu množinu, ktorá slúži na nezávislé vyhodnotenie výkonnosti natrénovaného modelu.
+```{r}
+set.seed(123)
+split <- initial_split(data, prop = 0.7)
+train <- training(split)
+test <- testing(split)
+
+```
+
+
+# Odhad treningového modelu
+Tu sme vytvorili lineárny regresný model a zobrazili jeho výsledky.
+
+```{r}
+train_model <- lm(Spotreba_domacnosti ~ HDP_na_obyvatela +
+                    Miera_nezamestnanosti + CPI +
+                    Obchodna_bilancia + Rast_spotreby,
+                  data = train)
+
+summary(train_model)
+
+```
+
+Interpretácia výsledkov:
+- HDP na obyvateľa - zvýšením HDP o 1 jednotku sa spotreba domácností zníži približne o 7,34 milióna PPP, čo je štatisticky významné
+- CPI - vyššia inflácia je spojená s vyššou spotrebou domácností, čiže jej efekt je štatisticky veľmi významný
+- Rast spotreby je významný, pretože rast spotreby v minulosti ovplyvňuje aktuálnu spotrebu
+- ostatné premenné sú štatisticky nevýznamné
+- R-squared má hodnotu 0,9927, čiže model vysvetľuje až 99,27% variability spotreby domácností, čo znamená veľmi dobrú prispôsobivosť modelu dátam
+- Hodnota F-statistic nám hovorí to, že celý model je štatisticky významný, teda kombinácia všetkých premenných vysvetľuje spotrebu
+
+Tento model vysvetľuje spotrebu domácností pomocou piatich ekonomických ukazovateľov. Ako jediná štatisticky významná premenná sa ukázal byť index spotrebiteľských cien (CPI), ktorý má silný kladný vplyv na spotrebu. Ostatné premenné, vrátane HDP na obyvateľa, miery nezamestnanosti a obchodnej bilancie, nepreukázali štatisticky významný vplyv.
+
+Napriek tomu, že model ako celok je štatisticky významný a vysvetľuje 98 % variability dát, väčšina jednotlivých premenných nie je spoľahlivá. Chyby predpovede modelu sú veľmi vysoké, pričom reziduá dosahujú desiatky miliárd eur, čo naznačuje obmedzenú praktickú využiteľnosť modelu na presné predpovede.
+
+# 4. Train / Test split
+Vyfiltrovali sme dáta z trénovacieho a testovacieho setu. Vytvorili sme trénovací dataset, ktorý obsahuje všetky pozorovania do roku 2016 vrátane a testovací dataset, ktorý obsahuje dáta od roku 2017 a vyššie.
+```{r}
+train <- hotove_data %>% filter(year<= 2016)
+test <- hotove_data %>% filter(year > 2016)
+```
+
+
+# 5.Lineárny regresný model
+Predikovali sme spotrebu domácností na základe ostatných premenných.
+```{r}
+model <- lm(Spotreba_domacnosti ~ HDP_na_obyvatela + Miera_nezamestnanosti + CPI + Obchodna_bilancia, data = train) 
+summary(model)
+```
+INTERPRETÁCIE:
+- HDP_na_obyvatela: je mierne významný (p-hodnota 0,023) - ukazuje negatívny vplyv
+- Miera nezamestnanosti a Obchodná bilancia sú štatisticky nevýznamné (p-hodnoty > 0,05)
+- CPI je veľmi významný (p-hodnota 4.12e-05) - so vzrastom CPI o 1 jednotku rastie spotreba o ~40,57 miliárd
+- R-squared = 0,9876 - model vysvetľuje 98,76% variability spotreby domácností
+- Adjusted R-squared = 0,9834 - po započítaní počtu premenných stále vysvetľuje 98,34%
+- F-statistic = 238,5 (p-value: 2.546e-11) - celý model je štatisticky veľmi významný
+  
+# Predikcia na testovacom súbore
+```{r}
+test$pred_consumption <- predict(train_model, newdata = test)
+
+ggplot(test, aes(x = year)) +
+  geom_line(aes(y = Spotreba_domacnosti, color = "Skutočné")) +
+  geom_line(aes(y = pred_consumption, color = "Predikované"), linetype = "dashed") +
+  scale_color_manual(values = c("Skutočné" = "purple", "Predikované" = "darkblue")) +
+  labs(title = "Skutočná vs predikovaná spotreba domácností",
+       y = "Spotreba domácností (PPP)",
+       color = "Legenda")
+
+```
+Tu sme vytvorili graf, ktorý ukazuje, ako sa odlišuje skutočná spotreba domácnosti od predpokladanej, pričom predpokladaná spotreba je označená prerušovanou čiarou a skutočná plnou.
+
+
+# Kategorizácia spotreby
+```{r}
+data_Spotreba_domacnosti <- ifelse(hotove_data$Spotreba_domacnosti > median(hotove_data$Spotreba_domacnosti), 1, 0)
+faktor_Spotreba_domacnosti <- factor(data_Spotreba_domacnosti, levels = c(0, 1), labels = c("Nizka", "Vysoka"))
+
+log_model <- glm(data_Spotreba_domacnosti ~ HDP_na_obyvatela + CPI +
+                   Miera_nezamestnanosti + Obchodna_bilancia,
+                 data = hotove_data,
+                 family = binomial("logit"))
+
+summary(log_model)
+
+```
+Vytvorili binárnu premennú, ktorou sme rozdelili spotrebu domácností na nízku a vysokú podľa mediánu a následne postaví model na odhadovanie pravdepodobnosti, že spotreba bude patriť do vyššej skupiny.
+
+# Confusion matica pre kategorizovanú spotrebu
+```{r}
+prob <- predict(log_model, hotove_data, type = "response")
+pred <- ifelse(prob > 0.5, 1, 0)
+
+table(Predikcia = pred, Skutočné = data_Spotreba_domacnosti)
+
+```
+Tu sme vypočítali predpovedanú pravdepodobnosť spotreby pre každý rok a previedli sme tieto pravdepodobnosti na kategórie. 1 pre vysokú, 0 pre nízku, podľa hranice 0,5. Nakoniec sme vytvorili maticu, ktorá porovnáva predpovedané hodnoty s reálnymi a ukazuje, koľkokrát bol model správny alebo nesprávny.Model vykazuje ideálne výsledky so stoprocentnou úspešnosťou pri triedení údajov. Rozpoznáva obidve kategórie spotreby domácností, čo však môže byť dôsledkom prílišného prispôsobenia sa konkrétnemu súboru údajov.
+
+# Hodnotenie modelu (MAPE pre kontinuálnu predikciu)
+```{r}
+mape <- mean(abs(test$Spotreba_domacnosti - test$pred_consumption) / test$Spotreba_domacnosti)
+model_accuracy <- 1 - mape
+model_accuracy
+
+```
+Nakoniec sme vypočítali presnosť modelu pomocou MAPE (Mean Absolute Percentage Error). Vyšla nám hodnota 0,9685224, čo znamená, že náš model predpovedal s veľmi vysokou presnosťou približne 96,85%.
+
+Záver:
+Táto analýza skúmala faktory ovplyvňujúce spotrebu domácností v Nemecku v rokoch 2000-2023. Zistili sme, že spotreba výrazne závisí od vývoja cien, pričom index CPI vykazoval veľmi silnú pozitívnu koreláciu. Zároveň sa potvrdil negatívny vplyv nezamestnanosti na spotrebu domácností. Lineárny regresný model vysvetlil až 99 % variability spotreby.

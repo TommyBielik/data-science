@@ -1,0 +1,99 @@
+---
+title: "Ovzdušie"
+author: "Sofia Snopková"
+date: "2025-12-02"
+output:  
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    numbers_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# Príprava dát
+Najprv si stiahneme potrebné knižnice, s ktorými budeme v projekte pracovať.
+
+```{r}
+library(ISLR)
+library(tidyverse)
+library(rsample)
+
+#import datasetu Carseats z knižnice ISLR
+data(Carseats)
+View(Carseats)
+```
+
+```{r}
+#Načítanie datasetu do premennej na následné spracovanie, úpravu a analýzu
+seats <- Carseats
+summary(seats)
+```
+Interpretácia:
+- SALES: Počet predaných sedačiek sa pohybuje od 0 po 16 000, kde priemer predaných sedačiek je okolo 7 000.
+- Income: Ročný príjem sa pohyboval od 21 000 až do 120 000 USD
+- Price: Cena za ktorú sa predávajú sedačky v našom analyzovanom obchode sa pohybuje od 24 do 191 USD.
+- CompPrice: Ceny v konkurenčnom obchodes sa pohybujú od 77 do 175 USD. 
+- Population: Populácia v oblastiach kde sa obchody so sedačkami nachádzajú sa pohybovala od 10 000 do 509 000 obavateľov.
+- ShelveLoc: Priemerná kvalita umiestnenia produktu na polici bola väčšinou priemerná (219
+- Age: Priemerný vek zákazníkov v pozorovanej oblasti bol okolo 53 rokov.
+- Education: Priemerný počet študovaných rokov zákazníkov bol 14 rokov.
+- Urban: 282 obchodov sa nachádzalo v meste a 118 sa nachádzalo mimo mesta.
+- US: 258 obchodov sa nachádzalo v spojených štátoch a 142 nie
+
+
+V ďalšom kroku skontrolujeme, či sa v našom datasete nachádzajú nejaké prázdne hodnoty, ktoré by bolo treba doplniť. Zatiaľ z datasetu neodstraňujeme žiadne premenné, pretože každá z nich by mohla mať významný vplyv na predaj sedačiek a mohla by byť potrebná pri našej analýze.
+```{r}
+colSums(is.na(seats))
+```
+Z výstupu môžeme vidieť, že sa v našom datasete nenachádzajú žiadne NA, čiže prázdne hodnoty.
+
+```{r}
+library(ggplot2)
+library(ISLR)
+
+data("Carseats")
+df <- Carseats
+
+# Scatterplot Sales vs Price
+ggplot(df, aes(x = Price, y = Sales)) +
+  geom_point(color = "steelblue", alpha = 0.6) +   # body
+  geom_smooth(method = "lm", color = "red") +      # lineárny trend
+  labs(
+    title = "Vzťah medzi cenou a predajom Carseats",
+    x = "Cena Carseats (USD)",
+    y = "Predaj (tis. kusov)"
+  ) +
+  theme_minimal()
+
+```
+
+
+

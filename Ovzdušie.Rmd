@@ -75,25 +75,6 @@ colSums(is.na(seats))
 ```
 Z výstupu môžeme vidieť, že sa v našom datasete nenachádzajú žiadne NA, čiže prázdne hodnoty.
 
-```{r}
-library(ggplot2)
-library(ISLR)
-
-data("Carseats")
-df <- Carseats
-
-# Scatterplot Sales vs Price
-ggplot(df, aes(x = Price, y = Sales)) +
-  geom_point(color = "steelblue", alpha = 0.6) +   # body
-  geom_smooth(method = "lm", color = "red") +      # lineárny trend
-  labs(
-    title = "Vzťah medzi cenou a predajom Carseats",
-    x = "Cena Carseats (USD)",
-    y = "Predaj (tis. kusov)"
-  ) +
-  theme_minimal()
-
-```
 
 
 

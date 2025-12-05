@@ -39,7 +39,7 @@ plot(pressure)
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 # Príprava dát
-Najprv si stiahneme potrebné knižnice, s ktorými budeme v projekte pracovať.
+Najprv si stiahneme potrebné knižnice, s ktorými budeme v projekte pracovať. Cieľom projektu je analyzovať, ktoré faktory ovplyvňujú predaje detských autosedačiek (Sales) a vytvoriť predikčný model.
 
 ```{r}
 library(ISLR)
@@ -75,6 +75,54 @@ colSums(is.na(seats))
 ```
 Z výstupu môžeme vidieť, že sa v našom datasete nenachádzajú žiadne NA, čiže prázdne hodnoty.
 
+```{r}
+hist(seats$Sales)
+```
+Z histogramu vidíme, že najviac obchodov v datasete predalo autosedačky od 5 do 10 tisíc kusov.
+```{r}
+ggplot(seats, aes(x = Price, y = Sales)) +
+  geom_line(color = "purple") +
+  labs(title = "Ako cena sedačiek ovplyvňuje ich predaje",
+       x = "Cena", y = "Predaje")
+```
+Z grafu vidíme, že ako cena sedačiek stúpa, predaje klesajú.Vyskytuje sa pár anomálií, ako napríklad že dva razy boli mali predaje vyššiu hodnotu ako 15, a to keď cena sa pohybovala okolo 75 a 100, pričom táto cena nie je najnižšia z histórie obchodov.
+```{r}
+ggplot(seats, aes(x = Advertising, y = Sales)) +
+  geom_point(color = "purple") +
+  labs(title = "Ako reklama ovplyvňuje predaje autosedačiek",
+       x = "Reklama", y = "Predaje")
+```
+Vidíme, že vzťah reklama - predaje je slabý až stredný. Najväčší rozptyl predajov je pri hodnote reklamy 0, čo znamená, že veľa obchodov míňa veľmi málo na reklamu. Predaje sa tu veľmi líšia, čiže reklama nie je jediný faktor, ktorý ich ovplyvňuje. Pri vyššej reklame (15 - 30) vidíme, že počet bodov sa znižuje (menej obchodov míňa na reklamu), ale predaje sa mierne zvyšujú. Vieme povedať, že reklama má pozitívny, ale nie silný efekt na predaje.
+```{r}
+boxplot(Sales ~ ShelveLoc, data = seats)
+```
+Nasledujúci graf znázorňuje vzťah medzi predajmi a kvalitou umiestnenia autosedačky na poličke. Povedzme, že autosedačka je umiestnená na úrovní očí, čo je ideálna pozícia, dostane hodnotu "Good". Ak je príliš vysoko, "Bad", atď. Z grafu vidíme, že najviac predajov sa uskutočnilo, keď autosedačky boli na pozícií "Good", stredne, keď na "Medium" a najmenej, keď boli na pozícií "Bad". Z tohto zistenia môžme povedať, že pozícia na polici, kde je autosedačka umiestnená, ovplyvňuje jej predaj. Ako nasledujúci krok vyberieme všetky numerické hodnoty a zistíme koreláciu medzi nimi.
+```{r}
+num <- seats %>% select_if(is.numeric)
+cor(num)
+```
+Z korelačnej tabuľky sa zameriame hlavne na hodnoty Price, Age, Advertising a Income. CompPrice, Population a Education majú hodnoty veľmi blízko nule, čo znamená, že nemajú takmer žiadny efekt na predaje autosedačiek. Začneme teda od najsilnejšej k najslabšej.
+
+Price - má hodnotu približne -0.445, čo vyjadruje stredne silnú negatívnu koreláciu. Je to taktiež ekonomicky logické. Čím vyššia bude cena produktu, tým menej ľudí si ho kúpi.
+
+Advertising - má hodnotu 0.27, čiže slabšia pozitívna korelácia, čo znamená, čím viac sa minie na reklamu, tým budú vyššie predaje. Ale korelácia je iba mierna. Reklama pomáha, ale má limitovaný účinok.
+
+Age - má hodnotu -0.232, čo vyjadruje slabú až strednú negatívnu koreláciu. Je to pomerne logické, keďže s vyšším vekom populácie okolo obchodu budú predaje mierne klesať.
+
+Income - má hodnotu 0.15, čo vyjadruje slabú pozitívnu koreláciu, čiže čím bohatšia oblasť, tým vyššie predaje. Vplyv je síce slabý, ale nie nulový.
+
+Ďalej, premenné ShelveLoc, Urban, US si faktorujeme:
+```{r}
+seats$ShelveLoc <- factor(seats$ShelveLoc)
+seats$Urban <- factor(seats$Urban)
+seats$US <- factor(seats$US)
+```
+Vytvoríme si regresný model, ktorý bude skúmať, ktoré premenné sú významné a ktoré nie. V modeli budeme predpovedať predaje (Sales) na základe premenných Price, Advertising, Income, Age a ShelveLoc.
+```{r}
+lm_model <- lm(Sales ~ Price + Advertising + Income + Age + ShelveLoc, 
+               data = seats)
+summary(lm_model)
+```
 
 
 

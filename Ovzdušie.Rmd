@@ -1,5 +1,5 @@
 ---
-title: "Ovzdušie"
+title: "Analýza predaja autosedačiek"
 author: "Sofia Snopková"
 date: "2025-12-02"
 output:  
@@ -14,41 +14,18 @@ output:
     highlight: tango
     code_folding: hide 
 ---
+# 1.Príprava dát
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
-# Príprava dát
-Najprv si stiahneme potrebné knižnice, s ktorými budeme v projekte pracovať. Cieľom projektu je analyzovať, ktoré faktory ovplyvňujú predaje detských autosedačiek (Sales) a vytvoriť predikčný model.
+Najprv si stiahneme potrebné knižnice, s ktorými budeme v projekte pracovať. Cieľom projektu je analyzovať, ktoré faktory ovplyvňujú predaje autosedačiek (Sales) a vytvoriť predikčný model.
 
 ```{r}
 library(ISLR)
 library(tidyverse)
 library(rsample)
+library(car)
 
 #import datasetu Carseats z knižnice ISLR
 data(Carseats)
-View(Carseats)
 ```
 
 ```{r}
@@ -57,19 +34,31 @@ seats <- Carseats
 summary(seats)
 ```
 Interpretácia:
+
 - SALES: Počet predaných sedačiek sa pohybuje od 0 po 16 000, kde priemer predaných sedačiek je okolo 7 000.
+
 - Income: Ročný príjem sa pohyboval od 21 000 až do 120 000 USD
+
 - Price: Cena za ktorú sa predávajú sedačky v našom analyzovanom obchode sa pohybuje od 24 do 191 USD.
-- CompPrice: Ceny v konkurenčnom obchodes sa pohybujú od 77 do 175 USD. 
+
+- CompPrice: Ceny v konkurenčnom obchodes sa pohybujú od 77 do 175 USD.
+
 - Population: Populácia v oblastiach kde sa obchody so sedačkami nachádzajú sa pohybovala od 10 000 do 509 000 obavateľov.
+
 - ShelveLoc: Priemerná kvalita umiestnenia produktu na polici bola väčšinou priemerná (219
+
 - Age: Priemerný vek zákazníkov v pozorovanej oblasti bol okolo 53 rokov.
+
 - Education: Priemerný počet študovaných rokov zákazníkov bol 14 rokov.
+
 - Urban: 282 obchodov sa nachádzalo v meste a 118 sa nachádzalo mimo mesta.
+
 - US: 258 obchodov sa nachádzalo v spojených štátoch a 142 nie
 
+# 2.Exploratívna analýza (EDA)
 
 V ďalšom kroku skontrolujeme, či sa v našom datasete nachádzajú nejaké prázdne hodnoty, ktoré by bolo treba doplniť. Zatiaľ z datasetu neodstraňujeme žiadne premenné, pretože každá z nich by mohla mať významný vplyv na predaj sedačiek a mohla by byť potrebná pri našej analýze.
+
 ```{r}
 colSums(is.na(seats))
 ```
@@ -78,25 +67,33 @@ Z výstupu môžeme vidieť, že sa v našom datasete nenachádzajú žiadne NA,
 ```{r}
 hist(seats$Sales)
 ```
+
 Z histogramu vidíme, že najviac obchodov v datasete predalo autosedačky od 5 do 10 tisíc kusov.
+
 ```{r}
 ggplot(seats, aes(x = Price, y = Sales)) +
-  geom_line(color = "purple") +
+  geom_point(color = "purple") +
   labs(title = "Ako cena sedačiek ovplyvňuje ich predaje",
        x = "Cena", y = "Predaje")
 ```
+
 Z grafu vidíme, že ako cena sedačiek stúpa, predaje klesajú.Vyskytuje sa pár anomálií, ako napríklad že dva razy boli mali predaje vyššiu hodnotu ako 15, a to keď cena sa pohybovala okolo 75 a 100, pričom táto cena nie je najnižšia z histórie obchodov.
+
 ```{r}
 ggplot(seats, aes(x = Advertising, y = Sales)) +
   geom_point(color = "purple") +
   labs(title = "Ako reklama ovplyvňuje predaje autosedačiek",
        x = "Reklama", y = "Predaje")
 ```
+
 Vidíme, že vzťah reklama - predaje je slabý až stredný. Najväčší rozptyl predajov je pri hodnote reklamy 0, čo znamená, že veľa obchodov míňa veľmi málo na reklamu. Predaje sa tu veľmi líšia, čiže reklama nie je jediný faktor, ktorý ich ovplyvňuje. Pri vyššej reklame (15 - 30) vidíme, že počet bodov sa znižuje (menej obchodov míňa na reklamu), ale predaje sa mierne zvyšujú. Vieme povedať, že reklama má pozitívny, ale nie silný efekt na predaje.
+
 ```{r}
 boxplot(Sales ~ ShelveLoc, data = seats)
 ```
+
 Nasledujúci graf znázorňuje vzťah medzi predajmi a kvalitou umiestnenia autosedačky na poličke. Povedzme, že autosedačka je umiestnená na úrovní očí, čo je ideálna pozícia, dostane hodnotu "Good". Ak je príliš vysoko, "Bad", atď. Z grafu vidíme, že najviac predajov sa uskutočnilo, keď autosedačky boli na pozícií "Good", stredne, keď na "Medium" a najmenej, keď boli na pozícií "Bad". Z tohto zistenia môžme povedať, že pozícia na polici, kde je autosedačka umiestnená, ovplyvňuje jej predaj. Ako nasledujúci krok vyberieme všetky numerické hodnoty a zistíme koreláciu medzi nimi.
+
 ```{r}
 num <- seats %>% select_if(is.numeric)
 cor(num)
@@ -113,16 +110,113 @@ Income - má hodnotu 0.15, čo vyjadruje slabú pozitívnu koreláciu, čiže č
 
 Ďalej, premenné ShelveLoc, Urban, US si faktorujeme:
 ```{r}
+#Faktorizácia premenných
 seats$ShelveLoc <- factor(seats$ShelveLoc)
 seats$Urban <- factor(seats$Urban)
 seats$US <- factor(seats$US)
 ```
-Vytvoríme si regresný model, ktorý bude skúmať, ktoré premenné sú významné a ktoré nie. V modeli budeme predpovedať predaje (Sales) na základe premenných Price, Advertising, Income, Age a ShelveLoc.
+
+Vytvoríme si regresný model, ktorý bude skúmať, ktoré premenné sú významné a ktoré nie. V modeli budeme odhadovať predaje (Sales) na základe premenných Price, Advertising, Income, Age a ShelveLoc.
+
+# 3.Lineárny model
 ```{r}
 lm_model <- lm(Sales ~ Price + Advertising + Income + Age + ShelveLoc, 
                data = seats)
 summary(lm_model)
 ```
+Vidíme, že R-squared vyšlo 0.7074, čo znamená, že model vysvetľuje 70.74% variability predajov. Priemerná odhadová chyba je 1.539 jednotky predajov a výsledky celkového F-testu značia, že model je veľmi významný ako celok. Jednotlivé odhady premenných hovoria že:
 
+Price má hodnotu -0.0606, čiže každé zvýšenie ceny o 1 jednotku, predaje klesnú o 0.0606
 
+Advertising má hodnotu 0.1057, čiže každá jednotka reklamy navyše predaje stúpnu o 0.1057
 
+Income má hodnotu 0.0136, čiže v oblastiach, kde majú ľudia priemerne vyšší príjem viac kupujú -> zvyšujú sa predaje. Avšak efekt je menší než pri reklame či cene, ale stály významný.
+
+Age má hodnotu -0.0498, čiže oblasti s vyšším vekovým priemerom kupujú menej -> predaje sú nižšie, čo znamená, že starší ľudia menej nakupujú autosedačky
+
+ShelveLoc, čiže umiestnenie tovari na polici, je najsilnejšia premenná v modeli. Pokiaľ bude pozícia tovaru umiestnená na dobrej pozícií (Good), predaje sú v priemere o 4.88 jednotiek vyššie než pri "Bad". Pri pozícií Medium stúpnu predaje o 2.005 oproti Bad.
+
+Prakticky povedané, najviac predajov robí dobré umiestnenie tovaru v obchode, vyššia cena tovaru má silný negatívny efekt na predaje, reklama a príjem pomáhajú, ale mierne a staršia populácia kupuje menej autosedačiek.
+
+Ako nasledovný krok si spravíme vif test, na zistenie multikolinearity v modeli:
+```{r}
+#Výsledok vif testu si uložíme do premennej, ktorú následne zobrazíme pomocou príkazu print()
+vif <- vif(lm_model)
+print(vif)
+```
+Všetky hodnoty sú prakticky 1, čo znamená že v našom modeli multikolinearita neexistuje. Ďalším krokom v našej analýze sú predikcie.
+
+# 4.Predikcie a metriky
+```{r}
+#Nastavíme seed, aby sme zaistili náhodnosť pri výbere dát do trénovacej a testovacej množiny
+set.seed(123)
+
+#Následne rozdelíme dáta do trénovacej a testovacej množiny
+split <- initial_split(seats, prop = 0.7)
+train <- training(split)
+test <- testing(split)
+
+#Vytvoríme model z trénovacej množiny dát
+train_model <- lm(Sales ~ Price + Advertising + Income + ShelveLoc + Age, data = train)
+
+summary(train_model)
+
+```
+Z reziduií mal najväčší podhodnotený predaj (Min) hodnotu -5.267 a najväčší nadhodnotený predaj (Max) hodnotu 4.207. Na prvý pohľad sú to pomerne veľké odchýlky ale medián predikcií je v podstate rovný nule, čiže väčšina predikcií je veľmi blízko skutočným hodnotám.
+
+Price má hodnotu -0.058, čiže každé zvýšenie ceny o 1 jednotku, predaje klesnú o 0.058
+
+Advertising má hodnotu 0.101, čiže každá jednotka reklamy navyše predaje stúpnu o 0.101
+
+Income má hodnotu 0.011, čiže v oblastiach, kde majú ľudia priemerne vyšší príjem viac kupujú -> zvyšujú sa predaje. Avšak efekt je menší než pri reklame či cene, ale stály významný.
+
+Age má hodnotu -0.0531, čiže oblasti s vyšším vekovým priemerom kupujú menej -> predaje sú nižšie, čo znamená, že starší ľudia menej nakupujú autosedačky
+
+ShelveLocGood má hodnotu 4.779, takže ak je polička "Good", predaj je o ~4.78 kusov vyšší oproti referenčnej kategórií "Bad"
+
+ShelveLocMedium má hodnotu 1.776, takže ak je polička "Medium", predaj je o ~1.78 kusov vyšší ako "Bad"
+
+```{r}
+#Použijeme funkciu predict, aby sme predpovedali predaje na základe nášho trénovacieho modelu
+pred <- predict(train_model, newdata = test)
+
+#Keďže predpovedáme číselné hodnoty, vytvoríme si ďalšiu premennú, kde zostrojíme tabuľku, do ktorej pridáme hodnoty, ktoré predikoval náš model (predicted) a rozdiel medzi skutočnými hodnotami predaja (difference)
+difference_table <- test
+difference_table$predicted <- pred
+difference_table$difference <- difference_table$Sales - difference_table$predicted
+difference_table$index <- as.numeric(rownames(difference_table))
+
+#Nakoniec vyberieme tri stĺpce a zobrazíme hodnoty
+final_predict_table <- difference_table %>% 
+  select(Sales, predicted, difference)
+head(final_predict_table)
+```
+
+Keď sa pozrieme na tabuľku, môžme vidieť, že okrem predajov na indexoch 1 a 6, predikcie mali odchýlku menšiu ako 1. Pokiaľ zoberieme do úvahy predošlé zistenia, že cena a pozícia tovaru na poličke najviac ovplyvňujú predaje, tieto výsledky sú logické. V nasledovnej tabuľke sú zobrazené obchody na indexoch 1, 6 a 12.
+
+```{r}
+plot(final_predict_table$Sales, final_predict_table$predicted,
+     xlab = "Skutočné hodnoty (Sales)",
+     ylab = "Predikované hodnoty",
+     main = "Skutočné vs Predikované predaje",
+     pch = 19)
+
+```
+
+Na grafe môžme vidieť skutočné hodnoty porovnané s tými predikovanými. Čím majú body väčší rozptyl, tým nepresnejší model je a čím viac sa podobá priamke, tým sú predikcie presnejšie.
+
+```{r}
+#Vyberieme riadky s indexami 1, 6 a 12 a odstránime štatisticky nevýznamné stĺpce
+difference_table[difference_table$index %in% c(1,6, 12), !names(difference_table) %in% c("Population", "Education", "CompPrice", "Urban", "US")]
+```
+Z predošlých zistení vieme, že cena a pozícia tovaru na polici majú najväčší vplyv na predaje. Keď sa pozrieme na obchod s indexom 1, vidíme, že cena má hodnotu 120, čo je nadpriemer. V kombinácií s pozíciou na polici "Bad" je logické, že model vypočítal, že predaje budú nižšie (cca o 3.28). Obchod s indexom 6 má takisto pozíciu na polici "Bad", avšak cena je nižšia (72), čiže model bol tentokrát presnejší a odhadol sumu, ktorá sa odchylovala od skutočnej iba o 2.89. Na porovnanie, obchod s indexom 12 má cenu 94, čo je priemer, a pozíciu na polici "Good", čiže v tomto prípade bol model oveľa presnejší a odchýlka bola iba 0.249. V skratke, čím lepšia pozícia na polici a menšia cena, tým vyššie budú predaje. Ako posledný krok zistíme, aká bola priemerná chyba predikcie v jednotkách, akých je udávaný stĺpec Sales, čiže použijeme metriku RMSE (Root Mean Squared Error).
+
+```{r}
+rmse <- sqrt(mean((pred - test$Sales)^2))
+rmse
+```
+Náš model má hodnotu RMSE 1.39, čo znamená, že v priemere predpovie o ~1.39 kusov autosedačiek oproti skutočnému predaju. Je to relatívne nízka chyba, keďže predaje sú obyčajne v hodnotách okolo 10-15 na obchod.
+
+# 5.Záver
+
+Cieľom projektu bolo analyzovať, ktoré faktory najvýraznejšie ovplyvňujú predaje detských autosedačiek a vytvoriť predikčný model schopný odhadovať predaje na základe dostupných charakteristík obchodov. Prvým významným výsledkom bolo, čo sme mohli očakávať aj z intuície: cena je najzásadnejší faktor, ktorý negatívne ovplyvňuje predaje. Vyššia cena znižuje dopyt, pričom tento efekt je stabilný v celom datasete. Naopak najsilnejší pozitívny vplyv má na predaje pozícia produktu na polici. Pokiaľ je dostupne umiestnený produkt na polici, obchody môžu vykazovať oveľa lepšie výsledky ako tie, ktoré majú produkty nevhodne umiestnené na polici. Čo bolo pomerne prekvapivé zistenie je, že reklama, síce má pozitívny vplyv na predaje, nie je príliš silný. Vyšší príjem mierne zvyšuje predaje a vyšší vek populácie má tendenciu predaje autosedačiek znižovať, čo je pomerne logické, keďže starší ľudia menej jazdia na autách.

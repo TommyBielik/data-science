@@ -72,7 +72,7 @@ test_data <- testing(data_split)
 
 #odhad treningoveho modelu
 log_model <- glm(formula = Survived ~ Pclass + Sex + Age + SibSp + Fare, family = binomial("logit") ,  
-                 data = test_data)
+                 data = train_data)
 summary(log_model)
 
 #odhad na testovacom modeli
@@ -81,16 +81,16 @@ fin_log_model <- glm(formula = Survived ~ Pclass + Sex + Age + SibSp + Fare, fam
 summary(fin_log_model)
 #ulozenie prognozovanych hodnot
 fit_probab <- predict(fin_log_model , newdata = test_data)
-fit_result <- (fit_probab > 0.5,1,0)
+fit_result <- ifelse(fit_probab > 0.5,1,0)
 
 # percentualny podiel spravnych odpovedi
-fitted_err <- mean(fit_result = test_data$Survived)
+fitted_err <- mean(fit_result != test_data$Survived)
 fitted_acc <- 1 - fitted_err
 
 #zostrojenie confusion matrix
 table(fit_result , test_data$Survived)
 
-s# PROJEKT:
+# PROJEKT:
 # HTML a kod HTML
 #prezentácia :7 až 10 minút, prezentovanie HTML
 #teória, prečo take y a xka
